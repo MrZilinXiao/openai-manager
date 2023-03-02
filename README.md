@@ -99,6 +99,10 @@ WIP
    
    A: `code-davinci-002` or other similar OpenAI endpoints apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
 
+2. Q: Why don't you use multithreading?
+
+   A: :) Do not want to handling race condition, even if GIL's presence.
+
 ### Acknowledgement
 
 [openai-cookbook](https://github.com/openai/openai-cookbook)
@@ -113,7 +117,7 @@ WIP
   - [ ] Generations
   - [ ] ChatCompletions
 - [ ] Better back-off strategy for maximum throughput.
-- [ ] Properly handling exceptions raised by OpenAI API.
+- [x] Properly handling exceptions raised by OpenAI API.
 - [ ] Automatic rotation of tons of OpenAI API Keys. (Removing invaild, adding new, etc.)
 
 

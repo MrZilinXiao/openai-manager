@@ -1,6 +1,7 @@
 .vscode/
 172.17*
 test*.sh
+upload*.sh
 debug/
 .env
 .ipynb_checkpoints
