@@ -18,7 +18,7 @@ logger.debug(f"Logger level: {logger.level}")
 GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 10)
 PROMPTS_PER_ASYNC_BATCH = os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
 REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 20)  # 20 requests per minute in `code-davinci-002`
-TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 10000)  # 10,000 tokens per minute in `code-davinci-002`
+TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 40_000)  # 40,000 tokens per minute in `code-davinci-002`
 
 @dataclass
 class StatusTracker:

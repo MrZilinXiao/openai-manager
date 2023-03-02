@@ -7,7 +7,9 @@ Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite u
 Before using this tool, you are required to read the EULA and ToS of OpenAI L.P. carefully. Actions that violate the OpenAI user agreement may result in the API Key and associated account being suspended. The author shall not be held liable for any consequential damages.
 
 ### Design
-WIP; in short, this package helps you manage rate limit for each api_key for maximum number of requests to OpenAI API.
+TL;DR: this package helps you manage rate limit (both request-level and token-level) for each api_key for maximum number of requests to OpenAI API.
+
+This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budgee. Free-trial accounts apply strict rate limit.
 
 ### Quickstart
 
@@ -39,25 +41,32 @@ WIP; in short, this package helps you manage rate limit for each api_key for max
 
 3. Run this minimal running example to see how to boost your OpenAI completions. (more interfaces coming!)
 
-    ```diff
-    - import openai
-    + import openai_manager as openai
+    ```python
+    import openai as official_openai
+    import openai_manager
+    @timeit
+    def test_official_separate():
+        for i in range(10):
+            prompt = "Once upon a time, "
+            response = official_openai.Completion.create(
+                model="code-davinci-002",
+                prompt=prompt,
+                max_tokens=20,
+            )
+            print("Answer {}: {}".format(i, response["choices"][0]["text"]))
 
-    def test_batch_completion():
+    @timeit
+    def test_manager():
         prompt = "Once upon a time, "
         prompts = [prompt] * 10
-        # openai_manager provides identical call signitures with official OpenAI Python API
-        response = openai.Completion.create(
+        responses = openai_manager.Completion.create(
             model="code-davinci-002",
             prompt=prompts,
             max_tokens=20,
         )
-        assert len(response["choices"]) == 10
-        for i, answer in enumerate(response["choices"]):
-            print("Answer {}: {}".format(i, answer["text"]))
-
-    if __name__ == '__main__':
-        test_batch_completion()
+        assert len(responses) == 10
+        for i, response in enumerate(responses):
+            print("Answer {}: {}".format(i, response["choices"][0]["text"]))
     ```
 
 
@@ -69,11 +78,27 @@ WIP
 ### Frequently Asked Questions
 
 1. Q: Why don't we just use official batching function?
+
+   ```python
+    prompt = "Once upon a time, "
+    prompts = [prompt] * 10
+    response = openai.Completion.create(
+        model="code-davinci-002",
+        prompt=prompts,  # official batching allows multiple prompts in one request
+        max_tokens=20,
+    )
+    assert len(response["choices"]) == 10
+    for i, answer in enumerate(response["choices"]):
+        print("Answer {}: {}".format(i, answer["text"]))
+   ```
    
    A: `code-davinci-002` or other similar OpenAI endpoints apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
 
 ### Acknowledgement
 
+[openai-cookbook](https://github.com/openai/openai-cookbook)
+
+[openai-python](https://github.com/openai/openai-python)
 
 ### TODO
 
