@@ -27,6 +27,8 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
    OPENAI_API_KEY_1=sk-Nxo******
    OPENAI_API_KEY_2=sk-TG2******
    OPENAI_API_KEY_3=sk-Kpt******
+   # You can set a global proxy for all api_keys
+   OPENAI_API_PROXY=http://127.0.0.1:7890
    # You can also append proxy to each api_key. 
    # Make sure the indices match.
    OPENAI_API_PROXY_1=http://127.0.0.1:7890

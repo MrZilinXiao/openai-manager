@@ -1,13 +1,15 @@
-from openai_manager.auth_manager import OpenAIAuthManager
-from functools import partialmethod, partial
+# pylint: skip-file
+# avoid parially initialized module error
+from openai_manager.auth_manager import OpenAIAuthManager  # noqa
+GLOBAL_MANAGER = OpenAIAuthManager()  # noqa
 
-# once gets importted, prepare to init a manager
-GLOBAL_MANAGER = OpenAIAuthManager()
 
-from openai_manager.api_resources import Completion  # avoid parially initialized module error
+from openai_manager.api_resources import Completion  # noqa
+from functools import partialmethod, partial  # noqa
 
-# Completion = partialmethod()
 
 __all__ = [
     "Completion"
 ]
+
+name = "openai-manager"

@@ -1,3 +1,5 @@
+.vscode/
+172.17*
 test*.sh
 debug/
 .env

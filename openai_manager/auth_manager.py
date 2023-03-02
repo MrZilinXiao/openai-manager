@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 import asyncio
 import aiohttp
@@ -12,15 +12,18 @@ from openai_manager.utils import num_tokens_consumed_from_request, deprecated
 # exception import
 from openai_manager.exceptions import NoAvailableAuthException
 
-logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
+logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.INFO)))
 logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
 
 # notice loading custom YAML config will overwrite these envvars
-GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500)
-PROMPTS_PER_ASYNC_BATCH = os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
+GLOBAL_NUM_REQUEST_LIMIT = os.getenv(
+    "OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500)
+PROMPTS_PER_ASYNC_BATCH = os.getenv(
+    "OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
 # 20 requests per minute in `code-davinci-002`
-REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 15)
+REQUESTS_PER_MIN_LIMIT = os.getenv(
+    "OPENAI_REQUESTS_PER_MIN_LIMIT", 10)
 # 40,000 tokens per minute in `code-davinci-002`
 TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 30_000)
 
@@ -60,10 +63,11 @@ class RateLimitTracker:
 
 @dataclass
 class OpenAIAuth:
-    # auth_index: int
+    auth_index: int
     api_key: str
-    status_tracker: StatusTracker = StatusTracker()
-    ratelimit_tracker: RateLimitTracker = RateLimitTracker()
+    status_tracker: StatusTracker = field(default_factory=StatusTracker)
+    ratelimit_tracker: RateLimitTracker = field(
+        default_factory=RateLimitTracker)
     proxy: Optional[str] = None
     is_okay: bool = True
     in_use: bool = False
@@ -90,7 +94,7 @@ class OpenAIAuthManager:
         logger.info(f"Loaded {len(self.auths)} OpenAI auths...")
         # [{'some_key': 'some_proxy_or_None'}, ...]
         self.session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT)
+            # connector=aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT)
         )  # DeprecationWarning: session was shared among corotinues, allowing keeping connection alive
 
     def build_auth_from_env(self) -> List[OpenAIAuth]:
@@ -98,13 +102,17 @@ class OpenAIAuthManager:
         # auth priority: env var > config file; allowing both but not recommended
         # return a list of auths
         auths = []
+        auth_i = 0
+        default_proxy = os.getenv('OPENAI_API_PROXY', None)
         for env_key, env_value in os.environ.items():
             if env_key.startswith('OPENAI_API_KEY'):
                 env_key = env_key[len('OPENAI_API_KEY'):]
-                auths.append(OpenAIAuth(api_key=env_value,
+                auths.append(OpenAIAuth(auth_index=auth_i,
+                                        api_key=env_value,
                                         proxy=os.getenv(
-                                            f'OPENAI_API_PROXY{env_key}', None)
+                                            f'OPENAI_API_PROXY{env_key}', default_proxy)
                                         ))
+                auth_i += 1
         return auths
 
     def append_auth_from_config(self, config_path: Optional[str] = None, config_dicts: Optional[List[Dict[str, Any]]] = None):
@@ -112,8 +120,8 @@ class OpenAIAuthManager:
             pass
         if config_dicts is not None:
             # madantory keys `api_key` / `proxy`, etc...
-            self.auths.extend([OpenAIAuth(**config_dict)
-                              for config_dict in config_dicts])
+            self.auths.extend([OpenAIAuth(auth_index=i + len(self.auths), **config_dict)
+                              for i, config_dict in enumerate(config_dicts)])
 
     def get_available_auth(self) -> OpenAIAuth:
         # return the first available auth
@@ -246,8 +254,9 @@ class APIRequest:
         request_url: str,
         request_header: dict,
         retry_queue: asyncio.Queue,
-        status_tracker: StatusTracker,
-        ratelimit_tracker: RateLimitTracker,
+        auth: OpenAIAuth,
+        # status_tracker: StatusTracker,
+        # ratelimit_tracker: RateLimitTracker,
         session: aiohttp.ClientSession,
         thread_id: int,
     ):
@@ -255,9 +264,15 @@ class APIRequest:
         logger.info(f"thread {thread_id} Starting request #{self.task_id}")
         error = None
         try:
-            async with session.post(
-                url=request_url, headers=request_header, json=self.request_json
-            ) as response:
+            post_params = {
+                'url': request_url,
+                'headers': request_header,
+                'json': self.request_json
+            }
+            if auth.proxy:
+                post_params.update({'proxy': auth.proxy})
+
+            async with session.post(**post_params) as response:
                 # most request gets blocked here; so our restriction is not useful
                 response = await response.json()
             if "error" in response:
@@ -267,19 +282,23 @@ class APIRequest:
                 logger.warning(
                     f"Request {self.task_id} failed with error {response['error']}"
                 )
-                status_tracker.num_api_errors += 1
+                auth.status_tracker.num_api_errors += 1
                 error = response
                 if "Rate limit" in response["error"].get("message", ""):
                     logger.debug(
                         f"Set time_of_last_rate_limit_error to {time.time()}")
-                    status_tracker.time_of_last_rate_limit_error = time.time()
-                    status_tracker.num_rate_limit_errors += 1
-                    status_tracker.num_api_errors -= 1  # rate limit errors are counted separately
+                    # each time when triggering rate limit, record capacity:
+                    logger.warning(
+                        f"Rate limit triggered: capacity: {auth.ratelimit_tracker.available_request_capacity} (requests) / {auth.ratelimit_tracker.available_token_capacity} (tokens)")
+                    auth.status_tracker.time_of_last_rate_limit_error = time.time()
+                    auth.status_tracker.num_rate_limit_errors += 1
+                    # rate limit errors are counted separately
+                    auth.status_tracker.num_api_errors -= 1
 
         except Exception as e:  # catching naked exceptions is bad practice, but in this case we'll log & save them
             logger.warning(
                 f"Request {self.task_id} failed with Exception {e}")
-            status_tracker.num_other_errors += 1
+            auth.status_tracker.num_other_errors += 1
             error = e
 
         if error:
@@ -290,12 +309,12 @@ class APIRequest:
                 logger.error(
                     f"Request {self.request_json} failed after all attempts. Saving errors: {self.result}")
                 # append_to_jsonl([self.request_json, self.result], save_filepath)
-                status_tracker.num_tasks_in_progress -= 1
-                status_tracker.num_tasks_failed += 1
+                auth.status_tracker.num_tasks_in_progress -= 1
+                auth.status_tracker.num_tasks_failed += 1
         else:
             # append_to_jsonl([self.request_json, response], save_filepath)
-            status_tracker.num_tasks_in_progress -= 1
-            status_tracker.num_tasks_succeeded += 1
+            auth.status_tracker.num_tasks_in_progress -= 1
+            auth.status_tracker.num_tasks_succeeded += 1
             # logging.debug(f"Request {self.task_id} saved to {save_filepath}")
 
         # print({'response': response, 'error': error, 'task_id': self.task_id})

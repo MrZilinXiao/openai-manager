@@ -16,4 +16,10 @@ setuptools.setup(
     url="https://github.com/MrZilinXiao/openai-manager",
     packages=setuptools.find_namespace_packages(),
     install_requires=["aiohttp", "pytest", "openai", "tiktoken"],
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+    python_requires='>=3.7'
 )

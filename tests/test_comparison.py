@@ -45,15 +45,15 @@ def test_official_separate():
 
 
 @timeit
-def test_manager():
+def test_manager(count=10):
     prompt = "Once upon a time, "
-    prompts = [prompt] * 10
+    prompts = [prompt] * count
     responses = openai_manager.Completion.create(
         model="code-davinci-002",
         prompt=prompts,
         max_tokens=20,
     )
-    assert len(responses) == 10
+    assert len(responses) == count
     for i, response in enumerate(responses):
         print("Answer {}: {}".format(i, response["choices"][0]["text"]))
 
@@ -63,4 +63,4 @@ if __name__ == '__main__':
     # print('--------Official---------')
     # test_official_separate()
     print('--------Manager---------')
-    test_manager()
+    test_manager(count=100)

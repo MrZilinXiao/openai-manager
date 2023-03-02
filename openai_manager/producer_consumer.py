@@ -1,6 +1,6 @@
 import asyncio
-from typing import List, Dict, Any
-from openai_manager.auth_manager import OpenAIAuthManager, OpenAIAuth, APIRequest
+from typing import List, Dict, Any, Optional
+from openai_manager.auth_manager import OpenAIAuthManager, OpenAIAuth, APIRequest, REQUESTS_PER_MIN_LIMIT, TOKENS_PER_MIN_LIMIT
 import logging
 import os
 import time
@@ -8,28 +8,25 @@ from openai_manager.exceptions import NoAvailableAuthException, AttemptsExhauste
 from openai_manager.utils import num_tokens_consumed_from_request
 from tqdm import tqdm
 
-logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
+logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.INFO)))
 logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
 
 # notice loading custom YAML config will overwrite these envvars
-GLOBAL_NUM_REQUEST_LIMIT = int(
-    os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 10))
+
 PROMPTS_PER_ASYNC_BATCH = int(
     os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000))
-# 20 requests per minute in `code-davinci-002`
-REQUESTS_PER_MIN_LIMIT = int(os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 10))
-# 40,000 tokens per minute in `code-davinci-002`
-TOKENS_PER_MIN_LIMIT = int(os.getenv("TOKENS_PER_MIN_LIMIT", 20_000))
 COROTINE_PER_AUTH = int(os.getenv("COROTINE_PER_AUTH", 3))
 
 
-async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict], auth_manager, thread_id: int, pbar=None):
+async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict], auth_manager, thread_id: int, pbar: Optional[tqdm] = None):
     while True:
-        logger.debug(f"thread {thread_id} waiting for submission...")
+        logger.debug(
+            f"thread {thread_id} auth {auth.auth_index} waiting for submission...")
         item = await q.get()
         item: APIRequest
-        logger.debug(f"thread {thread_id} received submission {item}")
+        logger.debug(
+            f"thread {thread_id} auth {auth.auth_index} received submission {item}")
         # check if exhausted attempts
         if item.attempts_left == 0:
             raise AttemptsExhaustedException(
@@ -55,7 +52,7 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
                 f"Pausing to cool down for {remaining_seconds_to_pause:.4f} seconds. If you see this often, consider lower your rate limit configuration.")
             await asyncio.sleep(remaining_seconds_to_pause)
 
-        logger.debug(f"thread {thread_id} submitting request... "
+        logger.debug(f"thread {thread_id} auth {auth.auth_index} submitting request... "
                      f"remaining token capacity: {auth.ratelimit_tracker.available_token_capacity}; "
                      f"remaining request capacity: {auth.ratelimit_tracker.available_request_capacity}")
         # get response!
@@ -64,8 +61,9 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
             request_header={
                 'Authorization': f'Bearer {auth.api_key}'},
             retry_queue=q,
-            status_tracker=auth.status_tracker,
-            ratelimit_tracker=auth.ratelimit_tracker,
+            auth=auth,
+            # status_tracker=auth.status_tracker,
+            # ratelimit_tracker=auth.ratelimit_tracker,
             session=auth_manager.session,
             thread_id=thread_id,
         )
@@ -87,7 +85,7 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
                      f"current_available_request_capacity: {auth.ratelimit_tracker.available_request_capacity}")
         auth.ratelimit_tracker.last_update_time = current_time
 
-        if pbar is not None:
+        if pbar is not None and response['error'] is None:
             pbar.update()
 
         results.append(response)  # remember to sort by task_id when returning
@@ -116,16 +114,16 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
         ))
 
     consumers = []
-    thread_id = 1
+    thread_id = 0
     for auth in auth_manager.auths:
         consumers.extend([asyncio.create_task(consume_submit(
-            q, auth, ret, auth_manager, thread_id, pbar)) for _ in range(COROTINE_PER_AUTH)])
-        thread_id += 1
+            q, auth, ret, auth_manager, thread_id + j, pbar)) for j in range(COROTINE_PER_AUTH)])
+        thread_id += COROTINE_PER_AUTH
     await q.join()  # wait until queue is empty
     for c in consumers:  # shutdown all consumers
         c.cancel()
-    # gather results
-    return list(sorted(ret, key=lambda x: x['task_id']))
+    # gather results, ignore errors
+    return list(sorted([result for result in ret if not result['error']], key=lambda x: x['task_id']))
 
 
 def sync_batch_submission(auth_manager, prompt, debug=False, no_tqdm=False, **kwargs):
