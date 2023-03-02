@@ -7,15 +7,17 @@ import logging
 import time
 import math
 import os
-import tiktoken
-import tqdm.asyncio  # add progress bar to monitor async progress
-from utils import num_tokens_consumed_from_request
+from tqdm.asyncio import tqdm_asyncio
+from openai_manager.utils import num_tokens_consumed_from_request
 
+logging.basicConfig(level=os.getenv("OPENAI_LOG_LEVEL", logging.WARNING))
 logger = logging.getLogger(__name__)
+logger.debug(f"Logger level: {logger.level}")
 
+# notice loading custom YAML config will overwrite these envvars
 GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 10)
 PROMPTS_PER_ASYNC_BATCH = os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
-REQUEST_PER_MIN_LIMIT = os.getenv("OPENAI_REQUEST_PER_MIN_LIMIT", 30)  # 30 requests per minute in `code-davinci-002`
+REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 20)  # 20 requests per minute in `code-davinci-002`
 TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 10000)  # 10,000 tokens per minute in `code-davinci-002`
 
 @dataclass
@@ -41,36 +43,41 @@ class RateLimitTracker:
     Keep track of each auth's rate limit status.
     OpenAI applys rate limit in both `requests per minute` and `tokens per minute`.
     """
+    next_request_time: int = 0
     seconds_to_pause_after_rate_limit_error: int = 15
     seconds_to_sleep_each_loop: int = 0.001
+    available_request_capacity: int = REQUESTS_PER_MIN_LIMIT
+    available_token_capacity: int = TOKENS_PER_MIN_LIMIT
+    last_update_time: int = time.time()
+    
 
 @dataclass
 class OpenAIAuth:
     # auth_index: int
     api_key: str
     status_tracker: StatusTracker = StatusTracker()
-    rate_limit_tracker: RateLimitTracker = RateLimitTracker()
+    ratelimit_tracker: RateLimitTracker = RateLimitTracker()
     proxy: Optional[str] = None
     is_okay: bool = True
     in_use: bool = False
 
 
 class OpenAIAuthManager:
-    # when importing parallel_openai, this class will be initialized
+    # when importing openai_manager, this class will be initialized
     endpoints = {
         'completions': 'https://api.openai.com/v1/completions', 
     }
-    def __init__(self, key_dict=None) -> None:
+    def __init__(self) -> None:
         # dummy auth here; 
         # as we use corotine, we do not need to care about race condition
-        self.auths = self.build_auth(key_dict)
+        self.auths = self.build_auth_from_env()
         logger.info(f"Loaded {len(self.auths)} OpenAI auths...")
         # [{'some_key': 'some_proxy_or_None'}, ...]
         self.session = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT)
         )  # DeprecationWarning: session was shared among corotinues, allowing keeping connection alive
 
-    def build_auth(self, key_dict) -> List[OpenAIAuth]:
+    def build_auth_from_env(self) -> List[OpenAIAuth]:
         # read from config file and build auths
         # auth priority: env var > config file; allowing both but not recommended
         # return a list of auths
@@ -81,11 +88,14 @@ class OpenAIAuthManager:
                 auths.append(OpenAIAuth(api_key=env_value, 
                                         proxy=os.getenv(f'OPENAI_API_PROXY{env_key}', None)
                                         ))
-        # TODO: if you want to customize auth limit, use config file
-        if key_dict is not None:
-            for key, proxy in key_dict.items():
-                auths.append(OpenAIAuth(api_key=key, proxy=proxy))
         return auths
+                
+    def append_auth_from_config(self, config_path: Optional[str] = None, config_dicts: Optional[List[Dict[str, Any]]] = None):
+        if config_path is not None:
+            pass
+        if config_dicts is not None:
+            # madantory keys `api_key` / `proxy`, etc...
+            self.auths.extend([OpenAIAuth(**config_dict) for config_dict in config_dicts])
         
 
     def get_available_auth(self) -> OpenAIAuth:
@@ -94,8 +104,13 @@ class OpenAIAuthManager:
             if auth.is_okay and not auth.in_use:
                 auth.in_use = True
                 return auth
+            
+    def __del__(self):
+        # close the session to avoid aiohttp error
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.session.close())
 
-auth_manager = OpenAIAuthManager()  # global once imported openai_manager
+# auth_manager = OpenAIAuthManager()  # global once imported openai_manager
 
 def task_id_generator():
     i = 0
@@ -107,18 +122,18 @@ async def give_up_task(reason: str, task_id: int):
     return {"error": reason, "task_id": task_id}
 
 
-async def batch_submission(prompts: List[str], return_openai_response=False, no_tqdm=False) -> List[Dict[str, Any]]:
-    # 直接每个prompt提交一个协程后gather（可以保证结果顺序）
-    # connection用aiohttp管理，Request仿照cookbook管理；
-    # 异常捕获后根据情况禁用API、放入retry_queue， etc.
+async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], return_openai_response=False, no_tqdm=False, **kwargs) -> List[Dict[str, Any]]:
+    """
+    auth_manager is provided globally
+    """
     ret = []
-    async_gather = asyncio.gather if no_tqdm else tqdm.asyncio.gather
+    async_gather = asyncio.gather if no_tqdm else tqdm_asyncio.gather
 
     retry_queue = asyncio.Queue(maxsize=len(prompts))  # an asynchronized queue; 
     # retry_queue = Queue(maxsize=len(prompts))  # a synchronized queue; don't know if it is usable in async task
     api_requests = []
     for prompt in prompts:
-        request_json = {"model": "code-davinci-002", "prompt": prompt, "max_tokens": 20}
+        request_json = {"prompt": prompt, **kwargs}  # all unused kwargs goes here!
         token_consumption = num_tokens_consumed_from_request(
             request_json=request_json, 
             api_endpoint='completions',
@@ -137,19 +152,22 @@ async def batch_submission(prompts: List[str], return_openai_response=False, no_
         async_batch = api_requests[i * PROMPTS_PER_ASYNC_BATCH: (i + 1) * PROMPTS_PER_ASYNC_BATCH]
         auth_i = 0
         for async_sample in async_batch:
+            # current setting is to create_task first, check ratelimit in `call_API`
             task = asyncio.create_task(
                 async_sample.call_API(
                     request_url=auth_manager.endpoints['completions'],
                     request_header={'Authorization': f'Bearer {auth_manager.auths[auth_i].api_key}'},
                     retry_queue=retry_queue,
                     status_tracker=auth_manager.auths[auth_i].status_tracker,
+                    ratelimit_tracker=auth_manager.auths[auth_i].ratelimit_tracker,
                     session=auth_manager.session,
                     )
                 )
             task_lst.append(task)
             auth_i = (auth_i + 1) % len(auth_manager.auths)  # auth rotation
+            # TODO: allow balancing auths by weights
         # task_lst completed, gatehr results
-        results = await async_gather(*task_lst)
+        results = await async_gather(*task_lst)  # should await all results!
         task_lst = []  # empty task_lst for retry usage...
         # gathered results sometimes have some invalid response,
         # recorded in APIRequest.result and added to retry_queue
@@ -167,6 +185,7 @@ async def batch_submission(prompts: List[str], return_openai_response=False, no_
                     request_header={'Authorization': f'Bearer {auth_manager.auths[auth_i].api_key}'},
                     retry_queue=retry_queue,
                     status_tracker=auth_manager.auths[auth_i].status_tracker,
+                    ratelimit_tracker=auth_manager.auths[auth_i].ratelimit_tracker,
                     session=auth_manager.session,
                     )
                 )
@@ -183,7 +202,7 @@ async def batch_submission(prompts: List[str], return_openai_response=False, no_
         for retry_result in retry_results:
             k = 0
             while k < len(results):  # run scanning since task_id can't be used as index
-                if results[k].task_id == retry_result.task_id:
+                if results[k]['task_id'] == retry_result['task_id']:
                     results[k] = retry_result
                     break
                 k += 1
@@ -209,11 +228,25 @@ class APIRequest:
         request_url: str,
         request_header: dict,
         retry_queue: asyncio.Queue,
-        # save_filepath: str,
         status_tracker: StatusTracker,
+        ratelimit_tracker: RateLimitTracker,
         session: aiohttp.ClientSession,
     ):
         """Calls the OpenAI API and saves results."""
+        # before calling API, check
+        # 1. if we have enough capacity
+        while ratelimit_tracker.available_request_capacity < 1 or \
+            ratelimit_tracker.available_token_capacity < self.token_consumption:
+            asyncio.sleep(0.1)  # wait until capacity fulfilled
+            # This is not the best practice, maybe we should seek producer-consumer model
+            # which involves a main loop to manage the batch...
+        # 2. if we hit rate limit recently
+        seconds_since_rate_limit_error = time.time() - status_tracker.time_of_last_rate_limit_error
+        if seconds_since_rate_limit_error < ratelimit_tracker.seconds_to_pause_after_rate_limit_error:
+            remaining_seconds_to_pause = ratelimit_tracker.seconds_to_pause_after_rate_limit_error - seconds_since_rate_limit_error
+            asyncio.sleep(remaining_seconds_to_pause)
+            logger.warn(f"Pausing to cool down for {remaining_seconds_to_pause:.4f} seconds. If you see this often, consider lower your rate limit configuration.")
+
         logger.info(f"Starting request #{self.task_id}")
         error = None
         try:
@@ -255,14 +288,29 @@ class APIRequest:
             status_tracker.num_tasks_in_progress -= 1
             status_tracker.num_tasks_succeeded += 1
             # logging.debug(f"Request {self.task_id} saved to {save_filepath}")
-        print({'response': response, 'error': error, 'task_id': self.task_id})
+        
+        # before return, update available token capacity and available request capacity
+        current_time = time.time()
+        seconds_since_update = current_time - ratelimit_tracker.last_update_time
+        ratelimit_tracker.available_token_capacity = min(
+            ratelimit_tracker.available_token_capacity + TOKENS_PER_MIN_LIMIT * seconds_since_update / 60,
+            TOKENS_PER_MIN_LIMIT
+        )
+        ratelimit_tracker.available_request_capacity = min(
+            ratelimit_tracker.available_request_capacity + REQUESTS_PER_MIN_LIMIT * seconds_since_update / 60,
+            REQUESTS_PER_MIN_LIMIT
+        )
+        ratelimit_tracker.last_update_time = current_time
+
+        # print({'response': response, 'error': error, 'task_id': self.task_id})
         return {'response': response, 'error': error, 'task_id': self.task_id}
 
-def sync_batch_submission(prompts):
+def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
     loop = asyncio.get_event_loop()
-    return loop.run_until_complete(batch_submission(prompts))
+    responses_with_error_and_task_id = loop.run_until_complete(batch_submission(auth_manager, prompt, **kwargs))
+    return [response['response'] for response in responses_with_error_and_task_id]
 
 if __name__ == '__main__':
-    # test
+    # simple test
     prompts = ['Testing OpenAI!!' for _ in range(100)]
     print(sync_batch_submission(prompts))
