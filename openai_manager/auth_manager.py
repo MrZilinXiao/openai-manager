@@ -7,7 +7,7 @@ import time
 import math
 import os
 from tqdm.asyncio import tqdm_asyncio
-from openai_manager.utils import num_tokens_consumed_from_request
+from openai_manager.utils import num_tokens_consumed_from_request, deprecated
 
 # exception import
 from openai_manager.exceptions import NoAvailableAuthException
@@ -132,9 +132,10 @@ async def give_up_task(reason: str, task_id: int):
     return {"error": reason, "task_id": task_id}
 
 
+@deprecated
 async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], return_openai_response=False, no_tqdm=False, **kwargs) -> List[Dict[str, Any]]:
     """
-    auth_manager is provided globally
+    This batch_submission is deprecated! Use the one in `producer_consumer.py`!
     """
     # pre-check: empty auth list
     if len(auth_manager.auths) == 0:
@@ -297,11 +298,10 @@ class APIRequest:
             status_tracker.num_tasks_succeeded += 1
             # logging.debug(f"Request {self.task_id} saved to {save_filepath}")
 
-        # update finished
-
         # print({'response': response, 'error': error, 'task_id': self.task_id})
         return {'response': response, 'error': error, 'task_id': self.task_id}
 
+    @deprecated
     async def call_API(
         self,
         request_url: str,
@@ -401,6 +401,7 @@ class APIRequest:
         return {'response': response, 'error': error, 'task_id': self.task_id}
 
 
+@deprecated
 def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
     loop = asyncio.get_event_loop()
     responses_with_error_and_task_id = loop.run_until_complete(

@@ -11,7 +11,7 @@ Before using this tool, you are required to read the EULA and ToS of OpenAI L.P.
 ### Design
 TL;DR: this package helps you manage rate limit (both request-level and token-level) for each api_key for maximum number of requests to OpenAI API.
 
-This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budgee. Free-trial accounts apply strict rate limit.
+This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budget. Free-trial accounts apply strict rate limit.
 
 ### Quickstart
 

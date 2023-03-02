@@ -13,12 +13,15 @@ logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
 
 # notice loading custom YAML config will overwrite these envvars
-GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 10)
-PROMPTS_PER_ASYNC_BATCH = os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
+GLOBAL_NUM_REQUEST_LIMIT = int(
+    os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 10))
+PROMPTS_PER_ASYNC_BATCH = int(
+    os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000))
 # 20 requests per minute in `code-davinci-002`
-REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 10)
+REQUESTS_PER_MIN_LIMIT = int(os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 10))
 # 40,000 tokens per minute in `code-davinci-002`
-TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 20_000)
+TOKENS_PER_MIN_LIMIT = int(os.getenv("TOKENS_PER_MIN_LIMIT", 20_000))
+COROTINE_PER_AUTH = int(os.getenv("COROTINE_PER_AUTH", 3))
 
 
 async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict], auth_manager, thread_id: int, pbar=None):
@@ -116,7 +119,7 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
     thread_id = 1
     for auth in auth_manager.auths:
         consumers.extend([asyncio.create_task(consume_submit(
-            q, auth, ret, auth_manager, thread_id, pbar)) for _ in range(2)])
+            q, auth, ret, auth_manager, thread_id, pbar)) for _ in range(COROTINE_PER_AUTH)])
         thread_id += 1
     await q.join()  # wait until queue is empty
     for c in consumers:  # shutdown all consumers
@@ -125,11 +128,13 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
     return list(sorted(ret, key=lambda x: x['task_id']))
 
 
-def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
+def sync_batch_submission(auth_manager, prompt, debug=False, no_tqdm=False, **kwargs):
     loop = asyncio.get_event_loop()
-    with tqdm(total=len(prompt)) as pbar:
-        responses_with_error_and_task_id = loop.run_until_complete(
-            batch_submission(auth_manager, prompt, pbar=pbar, **kwargs))
+    pbar = tqdm(total=len(prompt)) if not no_tqdm else None
+    responses_with_error_and_task_id = loop.run_until_complete(
+        batch_submission(auth_manager, prompt, pbar=pbar, **kwargs))
+    if not pbar:
+        pbar.close()
     # keep 'response' only
     return [response['response'] for response in responses_with_error_and_task_id]
 
