@@ -88,8 +88,6 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
             pbar.update()
 
         results.append(response)  # remember to sort by task_id when returning
-        print(f"{item.task_id} complete!")
-        # logger.debug(response)
 
         q.task_done()
 
@@ -118,7 +116,7 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
     thread_id = 1
     for auth in auth_manager.auths:
         consumers.extend([asyncio.create_task(consume_submit(
-            q, auth, ret, auth_manager, thread_id, pbar)) for _ in range(1)])
+            q, auth, ret, auth_manager, thread_id, pbar)) for _ in range(2)])
         thread_id += 1
     await q.join()  # wait until queue is empty
     for c in consumers:  # shutdown all consumers
@@ -131,7 +129,7 @@ def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
     loop = asyncio.get_event_loop()
     with tqdm(total=len(prompt)) as pbar:
         responses_with_error_and_task_id = loop.run_until_complete(
-            batch_submission(auth_manager, prompt, pbar, **kwargs))
+            batch_submission(auth_manager, prompt, pbar=pbar, **kwargs))
     # keep 'response' only
     return [response['response'] for response in responses_with_error_and_task_id]
 
@@ -139,4 +137,4 @@ def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
 if __name__ == '__main__':
     auth_manager = OpenAIAuthManager()
     print(sync_batch_submission(auth_manager, [
-          "Hello world!"] * 50, max_tokens=20, model='code-davinci-002'))
+          "Hello world!"] * 30, max_tokens=20, model='code-davinci-002'))
