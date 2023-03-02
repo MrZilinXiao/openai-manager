@@ -2,6 +2,8 @@
 
 Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite useful if you are playing with `code-davinci-002` endpoint.
 
+**If you seldomly trigger rate limit errors, it is unnecessary to use this package.**
+
 ### Disclaimer
 
 Before using this tool, you are required to read the EULA and ToS of OpenAI L.P. carefully. Actions that violate the OpenAI user agreement may result in the API Key and associated account being suspended. The author shall not be held liable for any consequential damages.
@@ -44,6 +46,7 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
     ```python
     import openai as official_openai
     import openai_manager
+    
     @timeit
     def test_official_separate():
         for i in range(10):

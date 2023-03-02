@@ -1,5 +1,6 @@
 import tiktoken
 
+
 def num_tokens_consumed_from_request(
     request_json: dict,
     api_endpoint: str,
@@ -22,7 +23,8 @@ def num_tokens_consumed_from_request(
             num_tokens = prompt_tokens + completion_tokens
             return num_tokens
         else:
-            raise TypeError('Expecting either string or list of strings for "prompt" field in completion request')
+            raise TypeError(
+                'Expecting either string or list of strings for "prompt" field in completion request')
     # if embeddings request, tokens = input tokens
     elif api_endpoint == "embeddings":
         input = request_json["input"]
@@ -33,7 +35,9 @@ def num_tokens_consumed_from_request(
             num_tokens = sum([len(encoding.encode(i)) for i in input])
             return num_tokens
         else:
-            raise TypeError('Expecting either string or list of strings for "inputs" field in embedding request')
+            raise TypeError(
+                'Expecting either string or list of strings for "inputs" field in embedding request')
     # more logic needed to support other API calls (e.g., edits, inserts, DALL-E)
     else:
-        raise NotImplementedError(f'API endpoint "{api_endpoint}" not implemented in this script')
+        raise NotImplementedError(
+            f'API endpoint "{api_endpoint}" not implemented in this script')

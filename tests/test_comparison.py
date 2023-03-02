@@ -4,6 +4,7 @@ import openai_manager
 from functools import wraps
 import time
 
+
 def timeit(func):
     @wraps(func)
     def timeit_wrapper(*args, **kwargs):
@@ -11,9 +12,11 @@ def timeit(func):
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        print(
+            f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
         return result
     return timeit_wrapper
+
 
 @timeit
 def test_official_batch():
@@ -28,6 +31,7 @@ def test_official_batch():
     for i, answer in enumerate(response["choices"]):
         print("Answer {}: {}".format(i, answer["text"]))
 
+
 @timeit
 def test_official_separate():
     for i in range(10):
@@ -39,18 +43,20 @@ def test_official_separate():
         )
         print("Answer {}: {}".format(i, response["choices"][0]["text"]))
 
+
 @timeit
 def test_manager():
     prompt = "Once upon a time, "
-    prompts = [prompt] * 10
+    prompts = [prompt] * 50
     responses = openai_manager.Completion.create(
         model="code-davinci-002",
         prompt=prompts,
         max_tokens=20,
     )
-    assert len(responses) == 10
+    assert len(responses) == 50
     for i, response in enumerate(responses):
         print("Answer {}: {}".format(i, response["choices"][0]["text"]))
+
 
 if __name__ == '__main__':
     # allow tests without pytest
@@ -58,4 +64,3 @@ if __name__ == '__main__':
     # test_official_separate()
     print('--------Manager---------')
     test_manager()
-    openai_manager.GLOBAL_MANAGER.
