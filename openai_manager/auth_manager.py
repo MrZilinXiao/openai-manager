@@ -88,16 +88,10 @@ class OpenAIAuthManager:
     # when importing openai_manager, this class will be initialized
     endpoints = {
         'completions': 'https://api.openai.com/v1/completions',
+        'embeddings': 'https://api.openai.com/v1/embeddings',
+        'chat_completions': 'https://api.openai.com/v1/chat/completions'
     }
     task_id_generator = task_id_generator_function()
-    config_keys = {
-        'api_key': True,
-        'proxy': False,
-        'models': {
-            'requests_per_min': False,
-            'tokens_per_min': False,
-        }
-    }
 
     def __init__(self) -> None:
         self.auths = self.build_auth_from_env()
@@ -132,14 +126,25 @@ class OpenAIAuthManager:
     def append_auth_from_config(self, config_path: Optional[str] = None, config_dicts: Optional[List[Dict[str, Any]]] = None):
         if config_path is not None:
             try:
-                import pyyaml
+                import yaml
             except ImportError:
                 logger.warning(
                     f"pyyaml is not installed, run `pip install pyyaml` in your current environment.")
                 return
             with open(config_path, 'r') as f:
-                config = pyyaml.safe_load(f)
-            # check keys and formulate them into config_dict for loading...
+                config = yaml.safe_load(f)
+            for key, value in config.items():
+                if key.startswith('auth'):
+                    requests_per_min = value.pop(
+                        'requests_per_min', REQUESTS_PER_MIN_LIMIT)
+                    tokens_per_min = value.pop(
+                        'tokens_per_min', TOKENS_PER_MIN_LIMIT)
+                    self.auths.append(OpenAIAuth(auth_index=len(self.auths),
+                                                 ratelimit_tracker=RateLimitTracker(
+                        available_request_capacity=requests_per_min,
+                        available_token_capacity=tokens_per_min),
+                        **value
+                    ))
         if config_dicts is not None:
             # madantory keys `api_key` / `proxy`, etc...
             self.auths.extend([OpenAIAuth(auth_index=i + len(self.auths), **config_dict)

@@ -1,0 +1,15 @@
+auth_1:
+  api_key: sk-Nxo***  # mandatory
+  proxy: http://127.0.0.1:7892
+  requests_per_min: 10
+  tokens_per_min: 40000
+auth_2:
+  api_key: sk-Nxo***
+  proxy: http://127.0.0.1:7892
+  requests_per_min: 10
+  tokens_per_min: 40000
+auth_3:
+  api_key: sk-Nxo***
+  proxy: http://127.0.0.1:7892
+  requests_per_min: 10
+  tokens_per_min: 40000

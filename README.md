@@ -41,7 +41,11 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
    export $(grep -v '^#' .env | xargs)
    ```
 
-   2. YAML config file: you can add more fine-grained restrictions on each API key if you know the ratelimit for each key in advance. (WIP)
+   2. YAML config file: you can add more fine-grained restrictions on each API key if you know the ratelimit for each key in advance. See [example_config.yml](/example_config.yml) for details.
+   ```python
+   import openai_manager
+   openai_manager.append_auth_from_config(config_path='example_config.yml')
+   ```
 
 3. Run this minimal running example to see how to boost your OpenAI completions. (more interfaces coming!)
 
@@ -98,10 +102,6 @@ WIP
    ```
    
    A: `code-davinci-002` or other similar OpenAI endpoints apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
-
-2. Q: Why don't you use multithreading?
-
-   A: :) Do not want to handle race condition, even if GIL's presence.
 
 ### Acknowledgement
 
