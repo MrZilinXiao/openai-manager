@@ -101,7 +101,7 @@ WIP
 
 2. Q: Why don't you use multithreading?
 
-   A: :) Do not want to handling race condition, even if GIL's presence.
+   A: :) Do not want to handle race condition, even if GIL's presence.
 
 ### Acknowledgement
 

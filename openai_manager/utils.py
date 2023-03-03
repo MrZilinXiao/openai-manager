@@ -1,7 +1,12 @@
 import tiktoken
 import warnings
 import functools
+import os
+import logging
 
+logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
+logger = logging.getLogger(__name__)
+logger.debug(f"Logger level: {logger.level}")
 
 def deprecated(func):
     """This is a decorator which can be used to mark functions

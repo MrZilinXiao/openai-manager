@@ -53,7 +53,8 @@ def test_manager(count=10):
         prompt=prompts,
         max_tokens=20,
     )
-    assert len(responses) == count
+    assert len(
+        responses) == count, f"Length do not match: {len(responses)} vs {count}"
     for i, response in enumerate(responses):
         print("Answer {}: {}".format(i, response["choices"][0]["text"]))
 
