@@ -78,6 +78,20 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
             print("Answer {}: {}".format(i, response["choices"][0]["text"]))
     ```
 
+### Configuration
+
+Most configurations are manupulated by environmental variables. 
+
+```python
+GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500)  # aiohttp connection limit
+REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 10)  # number of requests per minute, config file will overwrite this
+TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 40_000)  # number of tokens per minute, config file will overwrite this
+COROTINE_PER_AUTH = int(os.getenv("COROTINE_PER_AUTH", 3))  # number of corotine per api_key, decrease it to 1 if ratelimit errors are triggered too often
+ATTEMPTS_PER_PROMPT = int(os.getenv("ATTEMPTS_PER_PROMPT", 5))  # number of attempts per prompt
+RATELIMIT_AFTER_SUBMISSION = str2bool(os.getenv("RATELIMIT_AFTER_SUBMISSION", "True"))  # whether to track ratelimit after submission, keep it enabled if response takes a long time
+OPENAI_LOG_LEVEL = int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING))  # default log level is WARNING, 10-DEBUG, 20-INFO, 30-WARNING, 40-ERROR, 50-CRITICAL; set to 10 if getting stuck
+```
+
 
 ### Performance Assessment
 

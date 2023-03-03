@@ -9,8 +9,6 @@ from tqdm import tqdm
 
 # notice loading custom YAML config will overwrite these envvars
 
-PROMPTS_PER_ASYNC_BATCH = int(
-    os.getenv("OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000))
 COROTINE_PER_AUTH = int(os.getenv("COROTINE_PER_AUTH", 3))
 ATTEMPTS_PER_PROMPT = int(os.getenv("ATTEMPTS_PER_PROMPT", 5))
 RATELIMIT_AFTER_SUBMISSION = str2bool(
