@@ -92,11 +92,13 @@ RATELIMIT_AFTER_SUBMISSION = str2bool(os.getenv("RATELIMIT_AFTER_SUBMISSION", "T
 OPENAI_LOG_LEVEL = int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING))  # default log level is WARNING, 10-DEBUG, 20-INFO, 30-WARNING, 40-ERROR, 50-CRITICAL; set to 10 if getting stuck
 ```
 
+Rate limit triggers will be visible under `logging.WARNING`. Run `OPENAI_LOG_LEVEL=40` to ignore rate limit warnings if you believe current setting is stable enought.
 
 ### Performance Assessment
 
-WIP
+After ChatCompletion release, the `code-davinci-002` endpoint becomes slow. Using 10 API keys, running 100 completions with `max_tokens=20` and other hyperparameters left default took 90 seconds on average. Using official API, it took 10 seconds per completion, thus 1000 in total. 
 
+Theroticallly, the throughput increases linearly with the number of API keys. 
 
 ### Frequently Asked Questions
 
@@ -130,8 +132,9 @@ WIP
   - [ ] Embeddings
   - [ ] Generations
   - [ ] ChatCompletions
-- [ ] Better back-off strategy for maximum throughput.
+- [x] Better back-off strategy for maximum throughput.
 - [x] Properly handling exceptions raised by OpenAI API.
+- [ ] Automatic batching prompts to reduce the number of requests.
 - [ ] Automatic rotation of tons of OpenAI API Keys. (Removing invaild, adding new, etc.)
 
 
