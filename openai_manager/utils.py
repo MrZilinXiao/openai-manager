@@ -3,10 +3,19 @@ import warnings
 import functools
 import os
 import logging
+import argparse
 
 logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
 logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
+
+def str2bool(s):
+    if s.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif s.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def deprecated(func):
     """This is a decorator which can be used to mark functions
@@ -42,7 +51,7 @@ def num_tokens_consumed_from_request(
             return num_tokens
         elif isinstance(prompt, list):  # multiple prompts
             prompt_tokens = sum([len(encoding.encode(p)) for p in prompt])
-            num_tokens = prompt_tokens + completion_tokens
+            num_tokens = prompt_tokens + completion_tokens * len(prompt)
             return num_tokens
         else:
             raise TypeError(

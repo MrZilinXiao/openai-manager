@@ -1,6 +1,8 @@
-import parallel_openai as openai
+# Work in progress
+import openai_manager as openai
 import os
 import asyncio
+import openai as offcial_openai
 # import parallel openai placeholder
 
 api_key = os.environ.get("OPENAI_API_KEY")

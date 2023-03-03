@@ -13,3 +13,6 @@ class Completion:
 
 class Embedding:
     pass
+
+class ChatCompletion:
+    pass

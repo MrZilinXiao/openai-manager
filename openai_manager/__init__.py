@@ -14,6 +14,11 @@ logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
 logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
 
+
+def append_auth_from_config(config_path=None, config_dicts=None):
+    GLOBAL_MANAGER.append_auth_from_config(config_path, config_dicts)
+
+
 __all__ = [
     "Completion"
 ]
