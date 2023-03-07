@@ -129,9 +129,9 @@ Theroticallly, the throughput increases linearly with the number of API keys.
 
 - [ ] Support all functions in OpenAI Python API.
   - [x] Completions
-  - [ ] Embeddings
+  - [x] Embeddings
   - [ ] Generations
-  - [ ] ChatCompletions
+  - [x] ChatCompletions
 - [x] Better back-off strategy for maximum throughput.
 - [x] Properly handling exceptions raised by OpenAI API.
 - [ ] Automatic batching prompts to reduce the number of requests.

@@ -6,6 +6,7 @@ import time
 from openai_manager.exceptions import NoAvailableAuthException, AttemptsExhaustedException
 from openai_manager.utils import num_tokens_consumed_from_request, logger, str2bool
 from tqdm import tqdm
+from openai.util import convert_to_openai_object
 
 # notice loading custom YAML config will overwrite these envvars
 
@@ -18,7 +19,8 @@ if COROTINE_PER_AUTH == 1:
     RATELIMIT_AFTER_SUBMISSION = False
 
 
-async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict], auth_manager, thread_id: int, pbar: Optional[tqdm] = None):
+async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict],
+                         auth_manager, thread_id: int, api_endpoint='completions', pbar: Optional[tqdm] = None):
     while True:
         logger.debug(
             f"thread {thread_id} auth {auth.auth_index} waiting for submission...")
@@ -52,7 +54,7 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
             await asyncio.sleep(auth.ratelimit_tracker.next_request_time - before_submission_time)
 
         response = await item.call_API_pure(
-            request_url=auth_manager.endpoints['completions'],
+            request_url=auth_manager.endpoints[api_endpoint],
             request_header={
                 'Authorization': f'Bearer {auth.api_key}'},
             retry_queue=q,
@@ -89,18 +91,20 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
         q.task_done()
 
 
-async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], return_openai_response=False, pbar=None, **kwargs) -> List[Dict[str, Any]]:
+async def batch_submission(auth_manager: OpenAIAuthManager, input: List[Any], pbar=None,
+                           api_endpoint='completions',
+                           **kwargs) -> List[Dict[str, Any]]:
     if len(auth_manager.auths) == 0:
         raise NoAvailableAuthException(f"No available OpenAI Auths!")
     ret = []
     q = asyncio.Queue()  # storing APIRequest
-    for prompt in prompts:
+    for i in input:
         # all unused kwargs goes here!
-        request_json = {"prompt": prompt, **kwargs}
+        request_json = i
         # TODO: automatic batching for a large number of prompts
         token_consumption = num_tokens_consumed_from_request(
             request_json=request_json,
-            api_endpoint='completions',
+            api_endpoint=api_endpoint,
             token_encoding_name='cl100k_base',
         )
         await q.put(APIRequest(
@@ -114,7 +118,8 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
     thread_id = 0
     for auth in auth_manager.auths:
         consumers.extend([asyncio.create_task(consume_submit(
-            q, auth, ret, auth_manager, thread_id + j, pbar)) for j in range(COROTINE_PER_AUTH)])
+            q, auth, ret, auth_manager, thread_id + j, pbar, api_endpoint=api_endpoint))
+            for j in range(COROTINE_PER_AUTH)])
         thread_id += COROTINE_PER_AUTH
     await q.join()  # wait until queue is empty
     for c in consumers:  # shutdown all consumers
@@ -123,16 +128,31 @@ async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], 
     return list(sorted([result for result in ret if not result['error']], key=lambda x: x['task_id']))
 
 
-def sync_batch_submission(auth_manager, prompt, debug=False, no_tqdm=False, **kwargs):
+def sync_batch_submission(auth_manager, prompt: Optional[List[str]] = None, input: Optional[List[str]] = None,
+                          messages: Optional[List[dict]] = None, debug=False, no_tqdm=False, return_openai_response=False, **kwargs):
     loop = asyncio.get_event_loop()
     pbar = tqdm(total=len(prompt)) if not no_tqdm else None
+    if prompt is not None:  # completion request
+        input_lst = [{"prompt": p, **kwargs} for p in prompt]
+        api_endpoint = 'completions'
+    elif input is not None:  # embedding request
+        input_lst = [{"input": i, **kwargs} for i in input]
+        api_endpoint = 'embeddings'
+    elif messages is not None:  # chatcompletion request
+        input_lst = [{"messages": m, **kwargs} for m in messages]
+        api_endpoint = 'chat_completions'
+    else:
+        raise ValueError("At lease one type of input should be provided!")
     responses_with_error_and_task_id = loop.run_until_complete(
-        batch_submission(auth_manager, prompt, pbar=pbar, **kwargs))
+        batch_submission(auth_manager, input_lst, pbar=pbar, api_endpoint=api_endpoint, **kwargs))
     if not pbar:
         pbar.close()
     # keep 'response' only
     # TODO: if gets automatic batching, remember to restore them back
-    return [response['response'] for response in responses_with_error_and_task_id]
+    if not return_openai_response:
+        return [response['response'] for response in responses_with_error_and_task_id]
+    else:
+        return [convert_to_openai_object(response['response']) for response in responses_with_error_and_task_id]
 
 
 if __name__ == '__main__':

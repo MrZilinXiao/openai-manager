@@ -8,7 +8,7 @@ setuptools.setup(
     name="openai-manager",
     license='MIT',
     author="MrZilinXiao",
-    version="0.0.1",
+    version="0.0.2",
     author_email="me@mrxiao.net",
     description="Speed up your OpenAI requests by balancing prompts to multiple API keys.",
     long_description=_LONG_DESCRIPTION,
