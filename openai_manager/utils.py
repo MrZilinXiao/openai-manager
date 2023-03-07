@@ -9,6 +9,7 @@ logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
 logger = logging.getLogger(__name__)
 logger.debug(f"Logger level: {logger.level}")
 
+
 def str2bool(s):
     if s.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -16,6 +17,7 @@ def str2bool(s):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
 def deprecated(func):
     """This is a decorator which can be used to mark functions
@@ -69,6 +71,27 @@ def num_tokens_consumed_from_request(
             raise TypeError(
                 'Expecting either string or list of strings for "inputs" field in embedding request')
     # more logic needed to support other API calls (e.g., edits, inserts, DALL-E)
+    # if chat_completions request, tokens = all content input tokens
+    elif api_endpoint == 'chat_completions':
+        input = request_json["messages"]
+        # batched or single input is always a list
+        assert isinstance(
+            input, list), f"Expecting list of strings for 'messages' field in chat_completions request, got {type(input)}"
+        is_multiple = isinstance(input[0], list) if input else False
+        #   messages=[
+        #     {"role": "system", "content": "You are a helpful assistant."},
+        #     {"role": "user", "content": "Who won the world series in 2020?"},
+        #     {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
+        #     {"role": "user", "content": "Where was it played?"}
+        # ]
+        #  if batched, messages can be a list of `messages`
+        if is_multiple:  # multiple inputs
+            num_tokens = sum([len(encoding.encode(i['content']))
+                             for inp in input for i in inp])
+        else:
+            num_tokens = sum([len(encoding.encode(inp['content']))
+                             for inp in input])
+        return num_tokens
     else:
         raise NotImplementedError(
             f'API endpoint "{api_endpoint}" not implemented in this script')
