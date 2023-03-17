@@ -1,8 +1,9 @@
 ## OpenAI-Manager
 
-Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite useful if you are playing with `code-davinci-002` endpoint.
+![pypi](https://img.shields.io/pypi/v/openai-manager.svg)
+![versions](https://img.shields.io/pypi/pyversions/openai-manager.svg)
 
-**If you seldomly trigger rate limit errors, it is unnecessary to use this package.**
+Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite useful if you are playing with `code-davinci-002` endpoint.
 
 ### Disclaimer
 
@@ -11,11 +12,11 @@ Before using this tool, you are required to read the EULA and ToS of OpenAI L.P.
 ### Design
 TL;DR: this package helps you manage rate limit (both request-level and token-level) for each api_key for maximum number of requests to OpenAI API.
 
-This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budget. Free-trial accounts apply strict rate limit.
+This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budget. Free-trial accounts apply **strict** rate limit.
 
 ### Quickstart
 
-1. Install openai-manager on PyPI.
+1. Install openai-manager on PyPI. Notice we need Python 3.7+ for maximum compatibility of `asyncio`.
    ```bash
    pip install openai-manager
    ```
@@ -47,52 +48,66 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
    openai_manager.append_auth_from_config(config_path='example_config.yml')
    ```
 
-3. Run this minimal running example to see how to boost your OpenAI completions. (more interfaces coming!)
+3. Two ways to use `openai_manager`:
+   1. Use it just like how you use official `openai` package. We implement exact the same call signature as official `openai` package.
+        ```python
+        import openai as official_openai
+        import openai_manager
+        from openai_manager.utils import timeit
+        
+        @timeit
+        def test_official_separate():
+            for i in range(10):
+                prompt = "Once upon a time, "
+                response = official_openai.Completion.create(
+                    model="code-davinci-002",
+                    prompt=prompt,
+                    max_tokens=20,
+                )
+                print("Answer {}: {}".format(i, response["choices"][0]["text"]))
 
-    ```python
-    import openai as official_openai
-    import openai_manager
-    
-    @timeit
-    def test_official_separate():
-        for i in range(10):
+        @timeit
+        def test_manager():
             prompt = "Once upon a time, "
-            response = official_openai.Completion.create(
+            prompts = [prompt] * 10
+            responses = openai_manager.Completion.create(
                 model="code-davinci-002",
-                prompt=prompt,
+                prompt=prompts,
                 max_tokens=20,
             )
-            print("Answer {}: {}".format(i, response["choices"][0]["text"]))
+            assert len(responses) == 10
+            for i, response in enumerate(responses):
+                print("Answer {}: {}".format(i, response["choices"][0]["text"]))
+        ```
+    2. Use it as a proxy server between you and OpenAI endpoint. First, run `python -m openai_manager.serving --port 8000 --host localhost --api_key [your custom key]`. Then set up the official python `openai` package:
+        ```python
+        import openai
+        openai.api_base = "http://localhost:8000/v1"
+        openai.api_key = "[your custom key]"
 
-    @timeit
-    def test_manager():
-        prompt = "Once upon a time, "
-        prompts = [prompt] * 10
-        responses = openai_manager.Completion.create(
+        # run like normal
+        prompt = ["Once upon a time, "] * 10
+        response = openai.Completion.create(
             model="code-davinci-002",
-            prompt=prompts,
+            prompt=prompt,
             max_tokens=20,
         )
-        assert len(responses) == 10
-        for i, response in enumerate(responses):
-            print("Answer {}: {}".format(i, response["choices"][0]["text"]))
-    ```
+        print(response["choices"][0]["text"])
+        ```
 
 ### Configuration
 
 Most configurations are manupulated by environmental variables. 
 
-```python
-GLOBAL_NUM_REQUEST_LIMIT = os.getenv("OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500)  # aiohttp connection limit
-REQUESTS_PER_MIN_LIMIT = os.getenv("OPENAI_REQUESTS_PER_MIN_LIMIT", 10)  # number of requests per minute, config file will overwrite this
-TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 40_000)  # number of tokens per minute, config file will overwrite this
-COROTINE_PER_AUTH = int(os.getenv("COROTINE_PER_AUTH", 3))  # number of corotine per api_key, decrease it to 1 if ratelimit errors are triggered too often
-ATTEMPTS_PER_PROMPT = int(os.getenv("ATTEMPTS_PER_PROMPT", 5))  # number of attempts per prompt
-RATELIMIT_AFTER_SUBMISSION = str2bool(os.getenv("RATELIMIT_AFTER_SUBMISSION", "True"))  # whether to track ratelimit after submission, keep it enabled if response takes a long time
-OPENAI_LOG_LEVEL = int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING))  # default log level is WARNING, 10-DEBUG, 20-INFO, 30-WARNING, 40-ERROR, 50-CRITICAL; set to 10 if getting stuck
-```
+- `GLOBAL_NUM_REQUEST_LIMIT`: aiohttp connection limit, default is `500`
+- `REQUESTS_PER_MIN_LIMIT`: number of requests per minute, default is `10`; config file will overwrite this
+- `TOKENS_PER_MIN_LIMIT`: number of tokens per minute, default is `40000`; config file will overwrite this
+- `COROTINE_PER_AUTH`: number of corotine per api_key, default is `3`; decrease it to 1 if ratelimit errors are triggered too often
+- `ATTEMPTS_PER_PROMPT`: number of attempts per prompt, default is `5`
+- `RATELIMIT_AFTER_SUBMISSION`: whether to track ratelimit after submission, default is `True`; keep it enabled if response takes a long time
+- `OPENAI_LOG_LEVEL`: default log level is WARNING, 10-DEBUG, 20-INFO, 30-WARNING, 40-ERROR, 50-CRITICAL; set to 10 if you are getting stuck and want to do some diagnose
 
-Rate limit triggers will be visible under `logging.WARNING`. Run `OPENAI_LOG_LEVEL=40` to ignore rate limit warnings if you believe current setting is stable enought.
+Rate limit triggers will be visible under `logging.WARNING`. Run `export OPENAI_LOG_LEVEL=40` to ignore rate limit warnings if you believe current setting is stable enought.
 
 ### Performance Assessment
 
@@ -117,13 +132,12 @@ Theroticallly, the throughput increases linearly with the number of API keys.
         print("Answer {}: {}".format(i, answer["text"]))
    ```
    
-   A: `code-davinci-002` or other similar OpenAI endpoints apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
+   A: Some OpenAI endpoints (like `code-davinci-002`) apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
 
 ### Acknowledgement
 
-[openai-cookbook](https://github.com/openai/openai-cookbook)
-
-[openai-python](https://github.com/openai/openai-python)
+- [openai-cookbook](https://github.com/openai/openai-cookbook): Best practice when dealing with official APIs.
+- [openai-python](https://github.com/openai/openai-python): Official Python version of OpenAI.
 
 ### TODO
 
@@ -136,6 +150,7 @@ Theroticallly, the throughput increases linearly with the number of API keys.
 - [x] Properly handling exceptions raised by OpenAI API.
 - [ ] Automatic batching prompts to reduce the number of requests.
 - [ ] Automatic rotation of tons of OpenAI API Keys. (Removing invaild, adding new, etc.)
+- [x] Serving as a reverse proxy to balance official requests.
 
 
 ### Donation
