@@ -4,8 +4,7 @@ from openai_manager.auth_manager import OpenAIAuthManager  # noqa
 GLOBAL_MANAGER = OpenAIAuthManager()  # noqa
 
 
-from openai_manager.api_resources import Completion  # noqa
-from functools import partialmethod, partial  # noqa
+from openai_manager.api_resources import Completion, Embedding, ChatCompletion  # noqa
 import logging
 import os
 
@@ -20,7 +19,9 @@ def append_auth_from_config(config_path=None, config_dicts=None):
 
 
 __all__ = [
-    "Completion"
+    "Completion", 
+    "Embedding", 
+    "ChatCompletion"
 ]
 
 name = "openai-manager"

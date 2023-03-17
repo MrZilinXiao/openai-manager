@@ -5,6 +5,7 @@ import aiohttp
 import time
 import math
 import os
+import traceback
 from tqdm.asyncio import tqdm_asyncio
 from openai_manager.utils import num_tokens_consumed_from_request, deprecated, logger
 
@@ -13,15 +14,15 @@ from openai_manager.exceptions import NoAvailableAuthException
 
 
 # notice loading custom YAML config will overwrite these envvars
-GLOBAL_NUM_REQUEST_LIMIT = os.getenv(
-    "OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500)
-PROMPTS_PER_ASYNC_BATCH = os.getenv(
-    "OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000)
+GLOBAL_NUM_REQUEST_LIMIT = int(os.getenv(
+    "OPENAI_GLOBAL_NUM_REQUEST_LIMIT", 500))
+PROMPTS_PER_ASYNC_BATCH = int(os.getenv(
+    "OPENAI_PROMPTS_PER_ASYNC_BATCH", 1000))
 # 20 requests per minute in `code-davinci-002`, we set it as default
-REQUESTS_PER_MIN_LIMIT = os.getenv(
-    "OPENAI_REQUESTS_PER_MIN_LIMIT", 10)
+REQUESTS_PER_MIN_LIMIT = int(os.getenv(
+    "OPENAI_REQUESTS_PER_MIN_LIMIT", 10))
 # 40,000 tokens per minute in `code-davinci-002`, we set it as default
-TOKENS_PER_MIN_LIMIT = os.getenv("TOKENS_PER_MIN_LIMIT", 40_000)
+TOKENS_PER_MIN_LIMIT = int(os.getenv("TOKENS_PER_MIN_LIMIT", 40_000))
 
 
 @dataclass
@@ -84,6 +85,12 @@ def task_id_generator_function():
         i += 1
 
 
+async def create_session():
+    return aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT)
+    )
+
+
 class OpenAIAuthManager:
     # when importing openai_manager, this class will be initialized
     endpoints = {
@@ -96,10 +103,11 @@ class OpenAIAuthManager:
     def __init__(self) -> None:
         self.auths = self.build_auth_from_env()
         logger.warning(f"Loaded {len(self.auths)} OpenAI auths...")
-        # [{'some_key': 'some_proxy_or_None'}, ...]
+        # self.session = asyncio.get_event_loop().run_until_complete(create_session())
         self.session = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT)
-        )  # DeprecationWarning: session was shared among corotinues, allowing keeping connection alive
+        )
+        # DeprecationWarning: session was shared among corotinues, allowing keeping connection alive
 
     def build_auth_from_env(self) -> List[OpenAIAuth]:
         # read from config file and build auths
@@ -329,6 +337,7 @@ class APIRequest:
         except Exception as e:  # catching naked exceptions is bad practice, but in this case we'll log & save them
             logger.warning(
                 f"Request {self.task_id} failed with Exception {e}")
+            traceback.print_exc()
             auth.status_tracker.num_other_errors += 1
             error = e
 

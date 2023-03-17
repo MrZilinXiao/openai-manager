@@ -1,6 +1,7 @@
 import asyncio
+import aiohttp
 from typing import List, Dict, Any, Optional
-from openai_manager.auth_manager import OpenAIAuthManager, OpenAIAuth, APIRequest, REQUESTS_PER_MIN_LIMIT, TOKENS_PER_MIN_LIMIT
+from openai_manager.auth_manager import OpenAIAuthManager, OpenAIAuth, APIRequest, REQUESTS_PER_MIN_LIMIT, TOKENS_PER_MIN_LIMIT, GLOBAL_NUM_REQUEST_LIMIT
 import os
 import time
 from openai_manager.exceptions import NoAvailableAuthException, AttemptsExhaustedException
@@ -15,12 +16,12 @@ ATTEMPTS_PER_PROMPT = int(os.getenv("ATTEMPTS_PER_PROMPT", 5))
 RATELIMIT_AFTER_SUBMISSION = str2bool(
     os.getenv("RATELIMIT_AFTER_SUBMISSION", "True"))
 
-if COROTINE_PER_AUTH == 1:
+if COROTINE_PER_AUTH == 1:  # single thread, no need for `after_submission_update`
     RATELIMIT_AFTER_SUBMISSION = False
 
 
 async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict],
-                         auth_manager, thread_id: int, api_endpoint='completions', pbar: Optional[tqdm] = None):
+                         auth_manager, thread_id: int, session, api_endpoint='completions', pbar: Optional[tqdm] = None):
     while True:
         logger.debug(
             f"thread {thread_id} auth {auth.auth_index} waiting for submission...")
@@ -59,7 +60,8 @@ async def consume_submit(q: asyncio.Queue, auth: OpenAIAuth, results: List[dict]
                 'Authorization': f'Bearer {auth.api_key}'},
             retry_queue=q,
             auth=auth,
-            session=auth_manager.session,
+            # session=auth_manager.session,
+            session=session,
             thread_id=thread_id,
         )
         # we update next_request_time when receiving the response, as sometimes response takes very long
@@ -116,11 +118,20 @@ async def batch_submission(auth_manager: OpenAIAuthManager, input: List[Any], pb
 
     consumers = []
     thread_id = 0
-    for auth in auth_manager.auths:
-        consumers.extend([asyncio.create_task(consume_submit(
-            q, auth, ret, auth_manager, thread_id + j, pbar, api_endpoint=api_endpoint))
-            for j in range(COROTINE_PER_AUTH)])
-        thread_id += COROTINE_PER_AUTH
+    # move connector and session here to avoid 'Timeout context manager should be used inside a task'
+    async with aiohttp.TCPConnector(limit=GLOBAL_NUM_REQUEST_LIMIT) as connector:
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for auth in auth_manager.auths:
+                consumers.extend([asyncio.create_task(consume_submit(
+                    q, auth, ret, auth_manager, thread_id + j, session, api_endpoint=api_endpoint, pbar=pbar))
+                    for j in range(COROTINE_PER_AUTH)])
+                thread_id += COROTINE_PER_AUTH
+            await q.join()
+    # for auth in auth_manager.auths:
+    #     consumers.extend([asyncio.create_task(consume_submit(
+    #         q, auth, ret, auth_manager, thread_id + j, api_endpoint=api_endpoint, pbar=pbar))
+    #         for j in range(COROTINE_PER_AUTH)])
+    #     thread_id += COROTINE_PER_AUTH
     await q.join()  # wait until queue is empty
     for c in consumers:  # shutdown all consumers
         c.cancel()
@@ -144,7 +155,7 @@ def sync_batch_submission(auth_manager, prompt: Optional[List[str]] = None, inpu
     else:
         raise ValueError("At lease one type of input should be provided!")
     responses_with_error_and_task_id = loop.run_until_complete(
-        batch_submission(auth_manager, input_lst, pbar=pbar, api_endpoint=api_endpoint, **kwargs))
+        batch_submission(auth_manager, input_lst, pbar=pbar, api_endpoint=api_endpoint))
     if not pbar:
         pbar.close()
     # keep 'response' only
