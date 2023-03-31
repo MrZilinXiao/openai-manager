@@ -3,14 +3,9 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import aiohttp
 import time
-import math
 import os
 import traceback
-from tqdm.asyncio import tqdm_asyncio
-from openai_manager.utils import num_tokens_consumed_from_request, deprecated, logger
-
-# exception import
-from openai_manager.exceptions import NoAvailableAuthException
+from openai_manager.utils import logger
 
 
 # notice loading custom YAML config will overwrite these envvars
@@ -186,110 +181,6 @@ class OpenAIAuthManager:
         loop.run_until_complete(self.session.close())
 
 
-@deprecated
-async def give_up_task(reason: str, task_id: int):
-    return {"error": reason, "task_id": task_id}
-
-
-@deprecated
-async def batch_submission(auth_manager: OpenAIAuthManager, prompts: List[str], return_openai_response=False, no_tqdm=False, **kwargs) -> List[Dict[str, Any]]:
-    """
-    This batch_submission is deprecated! Use the one in `producer_consumer.py`!
-    """
-    # pre-check: empty auth list
-    if len(auth_manager.auths) == 0:
-        raise NoAvailableAuthException(f"No available OpenAI Auths!")
-    ret = []
-    async_gather = asyncio.gather if no_tqdm else tqdm_asyncio.gather
-
-    retry_queue = asyncio.Queue(maxsize=min(
-        len(prompts), PROMPTS_PER_ASYNC_BATCH))  # an asynchronized queue;
-    # retry_queue = Queue(maxsize=len(prompts))  # a synchronized queue; don't know if it is usable in async task
-    api_requests = []
-    for prompt in prompts:
-        # all unused kwargs goes here!
-        request_json = {"prompt": prompt, **kwargs}
-        token_consumption = num_tokens_consumed_from_request(
-            request_json=request_json,
-            api_endpoint='completions',
-            token_encoding_name='cl100k_base',
-        )
-        api_requests.append(APIRequest(
-            task_id=next(auth_manager.task_id_generator),
-            request_json=request_json,
-            token_consumption=token_consumption,
-            attempts_left=3,
-        ))
-    # begin to submit tasks using different OpenAIAuth
-    num_async_steps = math.ceil(len(prompts) / PROMPTS_PER_ASYNC_BATCH)
-    for i in range(num_async_steps):
-        task_lst = []
-        async_batch = api_requests[i *
-                                   PROMPTS_PER_ASYNC_BATCH: (i + 1) * PROMPTS_PER_ASYNC_BATCH]
-        auth_i = 0
-        for async_sample in async_batch:
-            # current setting is to create_task first, check ratelimit in `call_API`
-            task = asyncio.create_task(
-                async_sample.call_API(
-                    request_url=auth_manager.endpoints['completions'],
-                    request_header={
-                        'Authorization': f'Bearer {auth_manager.auths[auth_i].api_key}'},
-                    retry_queue=retry_queue,
-                    status_tracker=auth_manager.auths[auth_i].status_tracker,
-                    ratelimit_tracker=auth_manager.auths[auth_i].ratelimit_tracker,
-                    session=auth_manager.session,
-                )
-            )
-            task_lst.append(task)
-            auth_i = (auth_i + 1) % len(auth_manager.auths)  # auth rotation
-            # TODO: allow balancing auths by weights
-        # task_lst completed, gatehr results
-        results = await async_gather(*task_lst)  # should await all results!
-        task_lst = []  # empty task_lst for retry usage...
-        # gathered results sometimes have some invalid response,
-        # recorded in APIRequest.result and added to retry_queue
-        # we now rerun the retry_queue until it is empty
-
-        # I don't think the retry strategy is robust, since gets stuck here.
-        while not retry_queue.empty():
-            # Note that some requests might have natural failures,
-            # e.g. exceed token limitation, so in APIRequest.call_API, we should exclude such cases in retry_queue
-            # TODO: exclude wrong instances in retry_queue
-            retry_request = retry_queue.get_nowait()
-            retry_request.attempts_left -= 1
-            if retry_request.attempts_left > 0:
-                task = asyncio.create_task(
-                    retry_request.call_API(
-                        request_url=auth_manager.endpoints['completions'],
-                        request_header={
-                            'Authorization': f'Bearer {auth_manager.auths[auth_i].api_key}'},
-                        retry_queue=retry_queue,
-                        status_tracker=auth_manager.auths[auth_i].status_tracker,
-                        ratelimit_tracker=auth_manager.auths[auth_i].ratelimit_tracker,
-                        session=auth_manager.session,
-                    )
-                )
-                task_lst.append(task)
-                auth_i = (auth_i + 1) % len(auth_manager.auths)
-            else:
-                # a request has been retried 3 times, we give up
-                task_lst.append(asyncio.create_task(
-                    give_up_task("Too many attempts", task_id=retry_request.task_id))
-                )
-        # gather again for retry_queue
-        retry_results = await async_gather(*task_lst)
-        # match retry_results back to original order by overwriting results
-        for retry_result in retry_results:
-            k = 0
-            while k < len(results):  # run scanning since task_id can't be used as index
-                if results[k]['task_id'] == retry_result['task_id']:
-                    results[k] = retry_result
-                    break
-                k += 1
-        ret.extend(results)
-    return ret
-
-
 @dataclass
 class APIRequest:
     """Stores an API request's inputs, outputs, and other metadata. Contains a method to make an API call."""
@@ -306,8 +197,6 @@ class APIRequest:
         request_header: dict,
         retry_queue: asyncio.Queue,
         auth: OpenAIAuth,
-        # status_tracker: StatusTracker,
-        # ratelimit_tracker: RateLimitTracker,
         session: aiohttp.ClientSession,
         thread_id: int,
     ):
@@ -358,9 +247,6 @@ class APIRequest:
 
         if error:
             self.result.append(error)
-            # if "Rate limit" in response["error"].get("message", ""):
-            #     self.attempts_left += 1  # do not consider rate limit
-            # when next time it gets popped out of queue, will raise Exception
             retry_queue.put_nowait(self)
             if self.attempts_left == 0:
                 logger.error(
@@ -372,11 +258,3 @@ class APIRequest:
             auth.status_tracker.num_tasks_succeeded += 1
 
         return {'response': response, 'error': error, 'task_id': self.task_id}
-
-
-@deprecated
-def sync_batch_submission(auth_manager, prompt, debug=False, **kwargs):
-    loop = asyncio.get_event_loop()
-    responses_with_error_and_task_id = loop.run_until_complete(
-        batch_submission(auth_manager, prompt, **kwargs))
-    return [response['response'] for response in responses_with_error_and_task_id]
