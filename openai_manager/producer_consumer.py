@@ -169,4 +169,4 @@ def sync_batch_submission(auth_manager, prompt: Optional[List[str]] = None, inpu
 if __name__ == '__main__':
     auth_manager = OpenAIAuthManager()
     print(sync_batch_submission(auth_manager, [
-          "Hello world!"] * 30, max_tokens=20, model='code-davinci-002'))
+          "Hello world!"] * 30, max_tokens=20, model='text-ada-001'))

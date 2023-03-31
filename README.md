@@ -3,7 +3,7 @@
 ![pypi](https://img.shields.io/pypi/v/openai-manager.svg)
 ![versions](https://img.shields.io/pypi/pyversions/openai-manager.svg)
 
-Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite useful if you are playing with `code-davinci-002` endpoint.
+Speed up your OpenAI requests by balancing prompts to multiple API keys. ~~Quite useful if you are playing with `code-davinci-002` endpoint.~~
 
 > Update on 2023/03/24: OpenAI terminated all `CODEX` endpoint access today. An immediate migration to `gpt-3.5-turbo` or other endpoints is needed to ensure the stability of your service.
 
@@ -19,7 +19,7 @@ Before using this tool, you are required to read the EULA and ToS of OpenAI L.P.
 
 TL;DR: this package helps you manage rate limit (both request-level and token-level) for each api_key for maximum number of requests to OpenAI API.
 
-This is extremely helpful if you use `CODEX` endpoint or you have a handful of free-trial accounts due to limited budget. Free-trial accounts apply **strict** rate limit.
+This is extremely helpful if ~~you use `CODEX` endpoint or~~ you have a handful of **free-trial accounts** due to limited budget. Free-trial accounts apply **strict** rate limit.
 
 ### Quickstart
 
@@ -76,7 +76,7 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
             for i in range(10):
                 prompt = "Once upon a time, "
                 response = official_openai.Completion.create(
-                    model="code-davinci-002",
+                    model="text-davinci-003",
                     prompt=prompt,
                     max_tokens=20,
                 )
@@ -87,7 +87,7 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
             prompt = "Once upon a time, "
             prompts = [prompt] * 10
             responses = openai_manager.Completion.create(
-                model="code-davinci-002",
+                model="text-davinci-003",
                 prompt=prompts,
                 max_tokens=20,
             )
@@ -104,7 +104,7 @@ This is extremely helpful if you use `CODEX` endpoint or you have a handful of f
         # run like normal
         prompt = ["Once upon a time, "] * 10
         response = openai.Completion.create(
-            model="code-davinci-002",
+            model="text-davinci-003",
             prompt=prompt,
             max_tokens=20,
         )
