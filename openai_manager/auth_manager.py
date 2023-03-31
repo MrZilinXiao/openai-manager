@@ -101,7 +101,9 @@ class OpenAIAuthManager:
     task_id_generator = task_id_generator_function()
 
     def __init__(self) -> None:
-        self.auths = self.build_auth_from_env()
+        # ".env" overrides envvars
+        env_source = self.parse_dict_for_env_file() if os.path.exists('.env') else os.environ
+        self.auths = self.build_auth_from_envvars(dict_source=env_source)
         logger.warning(f"Loaded {len(self.auths)} OpenAI auths...")
         # self.session = asyncio.get_event_loop().run_until_complete(create_session())
         self.session = aiohttp.ClientSession(
@@ -109,23 +111,36 @@ class OpenAIAuthManager:
         )
         # DeprecationWarning: session was shared among corotinues, allowing keeping connection alive
 
-    def build_auth_from_env(self) -> List[OpenAIAuth]:
+    def parse_dict_for_env_file(self) -> Dict[str, str]:
+        env_dict = dict()
+        if os.path.exists('.env'):
+            with open('.env', 'r') as f:
+                env_lines = f.readlines()
+                env_lines = [line.split('=') for line in env_lines]
+                for env_line in env_lines:
+                    if len(env_line) != 2:
+                        # skip invalid lines
+                        continue
+                    env_dict[env_line[0].strip()] = env_line[1].strip()
+        return env_dict
+
+    def build_auth_from_envvars(self, dict_source) -> List[OpenAIAuth]:
         # read from config file and build auths
-        # auth priority: env var > config file; allowing both but not recommended
+        # auth priority: .env > env var > config file;
         # return a list of auths
         auths = []
         auth_i = 0
-        default_proxy = os.getenv('OPENAI_API_PROXY', None)
+        default_proxy = dict_source.get('OPENAI_API_PROXY', None)
         if not default_proxy:
             default_proxy = None
         else:
             logger.warning(f'default proxy is set to {default_proxy}')
-        for env_key, env_value in os.environ.items():
+        for env_key, env_value in dict_source.items():
             if env_key.startswith('OPENAI_API_KEY'):
                 env_key = env_key[len('OPENAI_API_KEY'):]
                 auths.append(OpenAIAuth(auth_index=auth_i,
                                         api_key=env_value,
-                                        proxy=os.getenv(
+                                        proxy=dict_source.get(
                                             f'OPENAI_API_PROXY{env_key}', default_proxy)  # global proxy overwrites all if not provided proxy
                                         ))
                 auth_i += 1
