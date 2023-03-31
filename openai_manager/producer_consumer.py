@@ -142,7 +142,6 @@ async def batch_submission(auth_manager: OpenAIAuthManager, input: List[Any], pb
 def sync_batch_submission(auth_manager, prompt: Optional[List[str]] = None, input: Optional[List[str]] = None,
                           messages: Optional[List[dict]] = None, debug=False, no_tqdm=False, return_openai_response=False, **kwargs):
     loop = asyncio.get_event_loop()
-    pbar = tqdm(total=len(prompt)) if not no_tqdm else None
     if prompt is not None:  # completion request
         input_lst = [{"prompt": p, **kwargs} for p in prompt]
         api_endpoint = 'completions'
@@ -154,6 +153,7 @@ def sync_batch_submission(auth_manager, prompt: Optional[List[str]] = None, inpu
         api_endpoint = 'chat_completions'
     else:
         raise ValueError("At lease one type of input should be provided!")
+    pbar = tqdm(total=len(input_lst)) if not no_tqdm else None
     responses_with_error_and_task_id = loop.run_until_complete(
         batch_submission(auth_manager, input_lst, pbar=pbar, api_endpoint=api_endpoint))
     if not pbar:

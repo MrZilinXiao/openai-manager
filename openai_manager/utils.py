@@ -5,6 +5,7 @@ import os
 import logging
 import argparse
 import time
+from typing import List, Dict
 
 logging.basicConfig(level=int(os.getenv("OPENAI_LOG_LEVEL", logging.WARNING)))
 logger = logging.getLogger(__name__)
@@ -88,19 +89,21 @@ def num_tokens_consumed_from_request(
     # if chat_completions request, tokens = all content input tokens
     elif api_endpoint == 'chat_completions':
         num_tokens = 0
+        max_tokens = request_json.get("max_tokens", 15)
+        n = request_json.get("n", 1)
+        completion_tokens = n * max_tokens
         # note: future models may deviate from this
-        if request_json['model'] == "gpt-3.5-turbo-0301":
+        if request_json['model'].startswith("gpt-3.5-turbo"):
             # chat completions are also in list
-            for messages_lst in request_json['messages']:
-                for message in messages_lst:
-                    # every message follows <im_start>{role/name}\n{content}<im_end>\n
-                    num_tokens += 4
-                    for key, value in message.items():
-                        num_tokens += len(encoding.encode(value))
-                        if key == "name":  # if there's a name, the role is omitted
-                            num_tokens += -1  # role is always required and always 1 token
+            for message in request_json['messages']:
+                # every message follows <im_start>{role/name}\n{content}<im_end>\n
+                num_tokens += 4
+                for key, value in message.items():
+                    num_tokens += len(encoding.encode(value))
+                    if key == "name":  # if there's a name, the role is omitted
+                        num_tokens += -1  # role is always required and always 1 token
             num_tokens += 2  # every reply is primed with <im_start>assistant
-            return num_tokens
+        return num_tokens + completion_tokens
     else:
         raise NotImplementedError(
             f'API endpoint "{api_endpoint}" not implemented in this script')

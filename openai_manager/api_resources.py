@@ -24,5 +24,10 @@ class Embedding:
 class ChatCompletion:
     @classmethod
     def create(cls, **params):
-        messages = params.pop('messages')  # messages have to be a list; no default value
+        messages = params.pop('messages', None)
+        if not isinstance(messages, list):
+            raise TypeError(f"messages must be a list of dict, got {type(messages)}")
+        # when provided in openai style, wrap it with a list, despite this will not allow parallellization
+        if isinstance(messages[0], dict):
+            messages = [messages]
         return sync_batch_submission(GLOBAL_MANAGER, messages=messages, **params)
