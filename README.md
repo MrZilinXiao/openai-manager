@@ -2,6 +2,8 @@
 
 ![pypi](https://img.shields.io/pypi/v/openai-manager.svg)
 ![versions](https://img.shields.io/pypi/pyversions/openai-manager.svg)
+[![Run Unittest](https://github.com/MrZilinXiao/openai-manager/actions/workflows/unittest.yml/badge.svg)](https://github.com/MrZilinXiao/openai-manager/actions/workflows/unittest.yml)
+
 
 Speed up your OpenAI requests by balancing prompts to multiple API keys. ~~Quite useful if you are playing with `code-davinci-002` endpoint.~~
 
