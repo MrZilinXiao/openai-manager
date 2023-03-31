@@ -175,6 +175,7 @@ Theroticallly, the throughput **increases linearly** with the number of API keys
 
 #### Advance Functions
 - [ ] Automatic batching prompts to reduce the number of requests.
+  - Now a request only carries a single prompt. We can implement **a splitting strategy to let it carry multiple prompts** while keeping token consumption not exceeding quotas.
 - [ ] Automatic rotation of tons of OpenAI API Keys. (removing invaild, adding new, etc.)
 - [ ] Distributed serving mode for concurrent requests via `python -m openai_manager.serving`.
 

@@ -1,0 +1,5 @@
+aiohttp
+openai
+tiktoken
+fastapi
+uvicorn
