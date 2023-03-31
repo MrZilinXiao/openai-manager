@@ -23,7 +23,7 @@ This is extremely helpful if ~~you use `CODEX` endpoint or~~ you have a handful 
 
 ### Quickstart
 
-1. Install openai-manager on PyPI. Notice we need Python 3.7+ for maximum compatibility of `asyncio`.
+1. Install openai-manager on PyPI. Notice we need Python 3.8+ for maximum compatibility of `asyncio` and `tiktoken`.
    ```bash
    pip install -U openai-manager
    ```
