@@ -5,9 +5,13 @@
 
 Speed up your OpenAI requests by balancing prompts to multiple API keys. Quite useful if you are playing with `code-davinci-002` endpoint.
 
+> Update on 2023/03/24: OpenAI terminated all `CODEX` endpoint access today. An immediate migration to `gpt-3.5-turbo` or other endpoints is needed to ensure the stability of your service.
+
 ### Disclaimer
 
 Before using this tool, you are required to read the EULA and ToS of OpenAI L.P. carefully. Actions that violate the OpenAI user agreement may result in the API Key and associated account being suspended. The author shall not be held liable for any consequential damages.
+
+Caution: do not deploy this tool in Mainland China, Hong Kong SAR or any other locations where OpenAI disallows API usage. Use `OPENAI_API_PROXY` environmental variable to set a legel proxy (e.g. Japan) for connectting OpenAI API. Failure to do so will bring quick termination of your account.
 
 ### Design
 TL;DR: this package helps you manage rate limit (both request-level and token-level) for each api_key for maximum number of requests to OpenAI API.
@@ -133,6 +137,10 @@ Theroticallly, the throughput increases linearly with the number of API keys.
    ```
    
    A: Some OpenAI endpoints (like `code-davinci-002`) apply strict token-level rate limit, even if you upgrade to pay-as-you-go user. Simple batching would not solve this.
+   
+2. Q: Why don't we just use server-less service (e.g. [Cloudflare Workers](https://workers.cloudflare.com/), [Tencent Cloud Functions](https://www.tencentcloud.com/products/scf)) to do the same thing?
+
+   A: First, I usually write in Python, and most cloud services do not support Python server-less function. Second, I am not sure server-less solutions are capable of handling **rate limit controls** given their status-less nature. Tracking usage of each API key would be difficult (practical but not elegant) for server-less solutions.
 
 ### Acknowledgement
 
@@ -141,6 +149,8 @@ Theroticallly, the throughput increases linearly with the number of API keys.
 
 ### TODO
 
+#### Features
+
 - [ ] Support all functions in OpenAI Python API.
   - [x] Completions
   - [x] Embeddings
@@ -148,9 +158,13 @@ Theroticallly, the throughput increases linearly with the number of API keys.
   - [x] ChatCompletions
 - [x] Better back-off strategy for maximum throughput.
 - [x] Properly handling exceptions raised by OpenAI API.
-- [ ] Automatic batching prompts to reduce the number of requests.
-- [ ] Automatic rotation of tons of OpenAI API Keys. (Removing invaild, adding new, etc.)
 - [x] Serving as a reverse proxy to balance official requests.
+- [ ] Proxy-only mode to bypass blocks in Mainland China.
+
+#### Advance Functions
+- [ ] Automatic batching prompts to reduce the number of requests.
+- [ ] Automatic rotation of tons of OpenAI API Keys. (removing invaild, adding new, etc.)
+- [ ] Distributed serving mode for concurrent requests via `python -m openai_manager.serving`.
 
 
 ### Donation
